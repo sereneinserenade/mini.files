@@ -614,6 +614,8 @@ Default values:
       max_number = math.huge,
       -- Whether to show preview of file/directory under cursor
       preview = false,
+      -- If preview is enabled, maximum number of lines to show in preview
+      preview_max_lines = vim.o.lines,
       -- Width of focused window
       width_focus = 50,
       -- Width of non-focused window
@@ -695,6 +697,9 @@ There is no constraint by default.
 file/directory under cursor. Note: it is shown with highlighting if Neovim
 version is sufficient and file is small enough (less than 1K bytes per line
 or 1M bytes in total).
+
+`windows.preview_max_lines` is a number indicating maximum number of lines to
+show in preview, if preview enabled. Defaults to `vim.o.lines`.
 
 `windows.width_focus` and `windows.width_nofocus` are number of columns used
 as `width` for focused and non-focused windows respectively.

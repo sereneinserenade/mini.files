@@ -663,6 +663,9 @@ end
 --- version is sufficient and file is small enough (less than 1K bytes per line
 --- or 1M bytes in total).
 ---
+--- `windows.preview_max_lines` is a number indicating maximum number of lines to
+--- show in preview, if preview enabled. Defaults to `vim.o.lines`.
+---
 --- `windows.width_focus` and `windows.width_nofocus` are number of columns used
 --- as `width` for focused and non-focused windows respectively.
 MiniFiles.config = {
@@ -708,6 +711,8 @@ MiniFiles.config = {
     max_number = math.huge,
     -- Whether to show preview of file/directory under cursor
     preview = false,
+    -- Maximum number of lines to show, if preview is enabled, defaults to `vim.o.lines`
+    preview_max_lines = vim.o.lines,
     -- Width of focused window
     width_focus = 50,
     -- Width of non-focused window
@@ -1146,7 +1151,7 @@ MiniFiles.set_bookmark = function(id, path, opts)
 
   if not (type(id) == 'string' and id:len() == 1) then H.error('Bookmark id should be single character') end
   local is_valid_path = vim.is_callable(path)
-    or (type(path) == 'string' and H.fs_get_type(vim.fn.expand(path)) == 'directory')
+      or (type(path) == 'string' and H.fs_get_type(vim.fn.expand(path)) == 'directory')
   if not is_valid_path then H.error('Bookmark path should be a valid path to directory or a callable.') end
   opts = opts or {}
   if not (opts.desc == nil or type(opts.desc) == 'string') then H.error('Bookmark description should be string') end
@@ -1303,6 +1308,7 @@ H.setup_config = function(config)
   H.check_type('windows', config.windows, 'table')
   H.check_type('windows.max_number', config.windows.max_number, 'number')
   H.check_type('windows.preview', config.windows.preview, 'boolean')
+  H.check_type('windows.preview_max_lines', config.windows.preview_max_lines, 'number')
   H.check_type('windows.width_focus', config.windows.width_focus, 'number')
   H.check_type('windows.width_nofocus', config.windows.width_nofocus, 'number')
   H.check_type('windows.width_preview', config.windows.width_preview, 'number')
@@ -1339,14 +1345,14 @@ H.create_default_hl = function()
     vim.api.nvim_set_hl(0, name, opts)
   end
 
-  hi('MiniFilesBorder',         { link = 'FloatBorder' })
+  hi('MiniFilesBorder', { link = 'FloatBorder' })
   hi('MiniFilesBorderModified', { link = 'DiagnosticFloatingWarn' })
-  hi('MiniFilesCursorLine',     { link = 'CursorLine' })
-  hi('MiniFilesDirectory',      { link = 'Directory'   })
-  hi('MiniFilesFile',           {})
-  hi('MiniFilesNormal',         { link = 'NormalFloat' })
-  hi('MiniFilesTitle',          { link = 'FloatTitle'  })
-  hi('MiniFilesTitleFocused',   { link = 'FloatTitle' })
+  hi('MiniFilesCursorLine', { link = 'CursorLine' })
+  hi('MiniFilesDirectory', { link = 'Directory' })
+  hi('MiniFilesFile', {})
+  hi('MiniFilesNormal', { link = 'NormalFloat' })
+  hi('MiniFilesTitle', { link = 'FloatTitle' })
+  hi('MiniFilesTitleFocused', { link = 'FloatTitle' })
 end
 
 H.get_config = function(config)
@@ -1615,7 +1621,7 @@ H.explorer_go_in_range = function(explorer, buf_id, from_line, to_line)
     if fs_entry.fs_type == nil and fs_entry.path ~= nil then
       local path_resolved = vim.fn.resolve(fs_entry.path)
       local symlink_info = path_resolved == fs_entry.path and ''
-        or (' Looks like miscreated symlink (resolved to ' .. path_resolved .. ').')
+          or (' Looks like miscreated symlink (resolved to ' .. path_resolved .. ').')
       H.notify('Path ' .. fs_entry.path .. ' is not present on disk.' .. symlink_info, 'WARN')
     end
   end
@@ -1743,7 +1749,7 @@ H.explorer_refresh_depth_window = function(explorer, depth, win_count, win_col)
   local win_is_focused = depth == explorer.depth_focus
   local win_is_preview = opts.windows.preview and (depth == (explorer.depth_focus + 1))
   local cur_width = win_is_focused and opts.windows.width_focus
-    or (win_is_preview and opts.windows.width_preview or opts.windows.width_nofocus)
+      or (win_is_preview and opts.windows.width_preview or opts.windows.width_nofocus)
 
   -- Prepare target view
   local view = views[path] or {}
@@ -2185,19 +2191,19 @@ H.buffer_make_mappings = function(buf_id, mappings)
   end
 
   --stylua: ignore start
-  buf_map('n', mappings.close,       MiniFiles.close,       'Close')
-  buf_map('n', mappings.go_in,       go_in_with_count,      'Go in entry')
-  buf_map('n', mappings.go_in_plus,  go_in_plus,            'Go in entry plus')
-  buf_map('n', mappings.go_out,      go_out_with_count,     'Go out of directory')
-  buf_map('n', mappings.go_out_plus, go_out_plus,           'Go out of directory plus')
-  buf_map('n', mappings.mark_goto,   mark_goto,             'Go to bookmark')
-  buf_map('n', mappings.mark_set,    mark_set,              'Set bookmark')
-  buf_map('n', mappings.reset,       MiniFiles.reset,       'Reset')
-  buf_map('n', mappings.reveal_cwd,  MiniFiles.reveal_cwd,  'Reveal cwd')
-  buf_map('n', mappings.show_help,   MiniFiles.show_help,   'Show Help')
+  buf_map('n', mappings.close, MiniFiles.close, 'Close')
+  buf_map('n', mappings.go_in, go_in_with_count, 'Go in entry')
+  buf_map('n', mappings.go_in_plus, go_in_plus, 'Go in entry plus')
+  buf_map('n', mappings.go_out, go_out_with_count, 'Go out of directory')
+  buf_map('n', mappings.go_out_plus, go_out_plus, 'Go out of directory plus')
+  buf_map('n', mappings.mark_goto, mark_goto, 'Go to bookmark')
+  buf_map('n', mappings.mark_set, mark_set, 'Set bookmark')
+  buf_map('n', mappings.reset, MiniFiles.reset, 'Reset')
+  buf_map('n', mappings.reveal_cwd, MiniFiles.reveal_cwd, 'Reveal cwd')
+  buf_map('n', mappings.show_help, MiniFiles.show_help, 'Show Help')
   buf_map('n', mappings.synchronize, MiniFiles.synchronize, 'Synchronize')
-  buf_map('n', mappings.trim_left,   MiniFiles.trim_left,   'Trim branch left')
-  buf_map('n', mappings.trim_right,  MiniFiles.trim_right,  'Trim branch right')
+  buf_map('n', mappings.trim_left, MiniFiles.trim_left, 'Trim branch left')
+  buf_map('n', mappings.trim_right, MiniFiles.trim_right, 'Trim branch right')
 
   H.map('x', mappings.go_in, go_in_visual, { buffer = buf_id, desc = 'Go in selected entries', expr = true })
   --stylua: ignore end
@@ -2221,9 +2227,9 @@ H.buffer_update_directory = function(buf_id, path, opts, is_preview)
   -- Compute and cache (to use during sync) shown file system entries
   local children_path_ids = H.opened_buffers[buf_id].children_path_ids
   local fs_entries = children_path_ids == nil and H.fs_read_dir(path, opts.content)
-    or vim.tbl_map(H.get_fs_entry_from_path_index, children_path_ids)
+      or vim.tbl_map(H.get_fs_entry_from_path_index, children_path_ids)
   H.opened_buffers[buf_id].children_path_ids = children_path_ids
-    or vim.tbl_map(function(x) return x.path_id end, fs_entries)
+      or vim.tbl_map(function(x) return x.path_id end, fs_entries)
 
   -- Compute format expression resulting into same width path ids
   local path_width = math.floor(math.log10(#H.path_index)) + 1
@@ -2277,7 +2283,7 @@ H.buffer_update_file = function(buf_id, path, opts, _)
   if not is_text then return H.set_buflines(buf_id, { '-Non-text-file' .. string.rep('-', width_preview) }) end
 
   -- Compute lines. Limit number of read lines to work better on large files.
-  local has_lines, read_res = pcall(vim.fn.readfile, path, '', vim.o.lines)
+  local has_lines, read_res = pcall(vim.fn.readfile, path, '', opts.windows.preview_max_lines)
   -- - Make sure that lines don't contain '\n' (might happen in binary files).
   local lines = has_lines and vim.split(table.concat(read_res, '\n'), '\n') or {}
 
@@ -2646,10 +2652,10 @@ H.fs_actions_to_lines = function(fs_actions)
     local action, l = diff.action, nil
     local to_type = (diff.to or ''):sub(-1) == '/' and 'directory' or 'file'
     local del_type = diff.to == nil and 'permanently' or 'to trash'
-    if action == 'create' then l = string.format("CREATE │ %s (%s)",  rel(diff.to), to_type) end
-    if action == 'delete' then l = string.format("DELETE │ %s (%s)",  rel(diff.from), del_type) end
-    if action == 'copy'   then l = string.format("COPY   │ %s => %s", rel(diff.from), rel(diff.to)) end
-    if action == 'move'   then l = string.format("MOVE   │ %s => %s", rel(diff.from), rel(diff.to)) end
+    if action == 'create' then l = string.format("CREATE │ %s (%s)", rel(diff.to), to_type) end
+    if action == 'delete' then l = string.format("DELETE │ %s (%s)", rel(diff.from), del_type) end
+    if action == 'copy' then l = string.format("COPY   │ %s => %s", rel(diff.from), rel(diff.to)) end
+    if action == 'move' then l = string.format("MOVE   │ %s => %s", rel(diff.from), rel(diff.to)) end
     if action == 'rename' then l = string.format("RENAME │ %s => %s", rel(diff.from), rel(diff.to)) end
 
     -- Add to per directory lines
@@ -2853,7 +2859,7 @@ H.edit = function(path, win_id)
   if type(path) ~= 'string' then return end
   local b = vim.api.nvim_win_get_buf(win_id or 0)
   local try_mimic_buf_reuse = (vim.fn.bufname(b) == '' and vim.bo[b].buftype ~= 'quickfix' and not vim.bo[b].modified)
-    and (#vim.fn.win_findbuf(b) == 1 and vim.deep_equal(vim.fn.getbufline(b, 1, '$'), { '' }))
+      and (#vim.fn.win_findbuf(b) == 1 and vim.deep_equal(vim.fn.getbufline(b, 1, '$'), { '' }))
   local buf_id = vim.fn.bufadd(vim.fn.fnamemodify(path, ':.'))
   -- Showing in window also loads. Use `pcall` to not error with swap messages.
   pcall(vim.api.nvim_win_set_buf, win_id or 0, buf_id)
@@ -2877,7 +2883,7 @@ H.get_bufline = function(buf_id, line) return vim.api.nvim_buf_get_lines(buf_id,
 
 H.set_buflines = function(buf_id, lines)
   local cmd =
-    string.format('lockmarks lua vim.api.nvim_buf_set_lines(%d, 0, -1, false, %s)', buf_id, vim.inspect(lines))
+      string.format('lockmarks lua vim.api.nvim_buf_set_lines(%d, 0, -1, false, %s)', buf_id, vim.inspect(lines))
   vim.cmd(cmd)
 end
 

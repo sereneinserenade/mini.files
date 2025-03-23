@@ -236,6 +236,8 @@ Here are code snippets for some common installation methods (use only one):
     max_number = math.huge,
     -- Whether to show preview of file/directory under cursor
     preview = false,
+    -- If preview is enabled, maximum number of lines to show in preview
+    preview_max_lines = vim.o.lines,
     -- Width of focused window
     width_focus = 50,
     -- Width of non-focused window
