@@ -328,11 +328,11 @@
 --- - `MiniFilesExplorerClose` - just before explorer starts closing.
 ---
 --- - `MiniFilesBufferCreate` - when buffer is created to show a particular
----   directory. Triggered once per directory during one explorer session.
+---   directory/file. Triggered once per path during explorer session.
 ---   Can be used to create buffer-local mappings.
 ---
---- - `MiniFilesBufferUpdate` - when directory buffer is updated with new content.
----   Can be used for integrations to set |extmarks| with useful information.
+--- - `MiniFilesBufferUpdate` - when path buffer is updated with new content.
+---   Can be used for integrations to set useful |extmarks|.
 ---
 --- - `MiniFilesWindowOpen` - when new window is opened. Can be used to set
 ---   window-local settings (like border, 'winblend', etc.)
@@ -340,8 +340,8 @@
 --- - `MiniFilesWindowUpdate` - when a window is updated. Triggers VERY frequently.
 ---   At least after every cursor movement and "go in" / "go out" action.
 ---
---- Callback for each UI event will receive `data` field (see |nvim_create_autocmd()|)
---- with the following information:
+--- Callback for each buffer/window UI event will receive <data> field
+--- (see |nvim_create_autocmd()|) with the following information:
 ---
 --- - <buf_id> - index of target buffer.
 --- - <win_id> - index of target window. Can be `nil`, like in
@@ -571,6 +571,15 @@ local H = {}
 ---   require('mini.files').setup({}) -- replace {} with your config table
 --- <
 MiniFiles.setup = function(config)
+  -- TODO: Remove after Neovim=0.8 support is dropped
+  if vim.fn.has('nvim-0.9') == 0 then
+    vim.notify(
+      '(mini.files) Neovim<0.9 is soft deprecated (module works but not supported).'
+        .. ' It will be deprecated after next "mini.nvim" release (module might not work).'
+        .. ' Please update your Neovim version.'
+    )
+  end
+
   -- Export module
   _G.MiniFiles = MiniFiles
 
@@ -1898,6 +1907,7 @@ H.explorer_show_help = function(explorer, explorer_buf_id, explorer_win_id)
   -- Create buffer
   local buf_id = vim.api.nvim_create_buf(false, true)
   H.set_buflines(buf_id, lines)
+  H.set_buf_name(buf_id, 'help')
 
   vim.keymap.set('n', 'q', '<Cmd>close<CR>', { buffer = buf_id, desc = 'Close this window' })
 
@@ -1905,6 +1915,7 @@ H.explorer_show_help = function(explorer, explorer_buf_id, explorer_win_id)
   vim.b[buf_id].miniindentscope_disable = true
 
   vim.bo[buf_id].filetype = 'minifiles-help'
+  vim.bo[buf_id].bufhidden = 'wipe'
 
   -- Compute window data
   local line_widths = vim.tbl_map(vim.fn.strdisplaywidth, lines)
@@ -2092,6 +2103,7 @@ end
 H.buffer_create = function(path, mappings)
   -- Create buffer
   local buf_id = vim.api.nvim_create_buf(false, true)
+  H.set_buf_name(buf_id, path)
 
   -- Register buffer
   H.opened_buffers[buf_id] = { path = path }
@@ -2846,6 +2858,8 @@ H.check_type = function(name, val, ref, allow_nil)
   if type(val) == ref or (ref == 'callable' and vim.is_callable(val)) or (allow_nil and val == nil) then return end
   H.error(string.format('`%s` should be %s, not %s', name, ref, type(val)))
 end
+
+H.set_buf_name = function(buf_id, name) vim.api.nvim_buf_set_name(buf_id, 'minifiles://' .. buf_id .. '/' .. name) end
 
 H.notify = function(msg, level_name) vim.notify('(mini.files) ' .. msg, vim.log.levels[level_name]) end
 
