@@ -1,4 +1,4 @@
-<img src="https://github.com/echasnovski/media/blob/main/mini.nvim/logo/logo_files.png" style="width: 100%">
+<div align="center"> <img src="https://github.com/echasnovski/media/blob/main/mini.nvim/logo-2/logo-files_readme.png" alt="mini.files"/> </div>
 
 <!-- badges: start -->
 [![GitHub license](https://badgen.net/github/license/echasnovski/mini.nvim)](https://github.com/echasnovski/mini.nvim/blob/main/LICENSE)
@@ -45,8 +45,6 @@ See `*MiniFiles-examples*` tag in help file for some common configuration exampl
 Notes:
 
 - This module is written and thoroughly tested on Linux. Support for other platform/OS (like Windows or MacOS) is a goal, but there is no guarantee.
-
-- Works on all supported versions but using Neovim>=0.9 is recommended.
 
 - This module silently reacts to not enough permissions:
     - In case of missing file, check its or its parent read permissions.

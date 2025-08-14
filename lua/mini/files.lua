@@ -40,8 +40,6 @@
 --- - This module is written and thoroughly tested on Linux. Support for other
 ---   platform/OS (like Windows or MacOS) is a goal, but there is no guarantee.
 ---
---- - Works on all supported versions but using Neovim>=0.9 is recommended.
----
 --- - This module silently reacts to not enough permissions:
 ---     - In case of missing file, check its or its parent read permissions.
 ---     - In case of no manipulation result, check write permissions.
@@ -571,15 +569,6 @@ local H = {}
 ---   require('mini.files').setup({}) -- replace {} with your config table
 --- <
 MiniFiles.setup = function(config)
-  -- TODO: Remove after Neovim=0.8 support is dropped
-  if vim.fn.has('nvim-0.9') == 0 then
-    vim.notify(
-      '(mini.files) Neovim<0.9 is soft deprecated (module works but not supported).'
-        .. ' It will be deprecated after next "mini.nvim" release (module might not work).'
-        .. ' Please update your Neovim version.'
-    )
-  end
-
   -- Export module
   _G.MiniFiles = MiniFiles
 
@@ -668,9 +657,10 @@ end
 --- There is no constraint by default.
 ---
 --- `windows.preview` is a boolean indicating whether to show preview of
---- file/directory under cursor. Note: it is shown with highlighting if Neovim
---- version is sufficient and file is small enough (less than 1K bytes per line
---- or 1M bytes in total).
+--- file/directory under cursor. Notes:
+--- - It is always shown, even if current line is for not yet existing path.
+--- - File preview is highlighted if its size is small enough (less than 1K
+---   bytes per line or 1M bytes in total).
 ---
 --- `windows.preview_max_lines` is a number indicating maximum number of lines to
 --- show in preview, if preview enabled. Defaults to `vim.o.lines`.
@@ -1591,7 +1581,9 @@ H.explorer_sync_cursor_and_branch = function(explorer, depth)
   local cursor_path
   if type(cursor) == 'table' and H.is_valid_buf(buf_id) then
     local l = H.get_bufline(buf_id, cursor[1])
-    cursor_path = H.path_index[H.match_line_path_id(l)]
+    -- Fall back to treating current line as full basename, but for not yet
+    -- existing (a.k.a. "imaginary") path keep showing preview.
+    cursor_path = H.path_index[H.match_line_path_id(l)] or H.fs_child_path(path, l .. '\000')
   elseif type(cursor) == 'string' then
     cursor_path = H.fs_child_path(path, cursor)
   else
@@ -1608,9 +1600,8 @@ H.explorer_sync_cursor_and_branch = function(explorer, depth)
 
   -- Show preview to the right of current buffer if needed
   local show_preview = explorer.opts.windows.preview
-  local path_is_present = type(cursor_path) == 'string' and H.fs_is_present_path(cursor_path)
   local is_cur_buf = explorer.depth_focus == depth
-  if show_preview and path_is_present and is_cur_buf then table.insert(explorer.branch, cursor_path) end
+  if show_preview and is_cur_buf then table.insert(explorer.branch, cursor_path) end
 
   return explorer
 end
@@ -1774,7 +1765,7 @@ H.explorer_refresh_depth_window = function(explorer, depth, win_count, win_col)
     -- Use shortened full path in left most window
     title = win_count == 1 and H.fs_shorten_path(H.fs_full_path(path)) or H.fs_get_basename(path),
   }
-  config.title = ' ' .. H.escape_newline(config.title) .. ' '
+  config.title = ' ' .. H.sanitize_string(config.title) .. ' '
 
   -- Prepare and register window
   local win_id = windows[win_count]
@@ -1928,7 +1919,7 @@ H.explorer_show_help = function(explorer, explorer_buf_id, explorer_win_id)
   config.col = 0
   config.width = max_line_width
   config.height = #lines
-  config.title = vim.fn.has('nvim-0.9') == 1 and " 'mini.files' help " or nil
+  config.title = " 'mini.files' help "
   config.zindex = config.zindex + 1
   local default_border = (vim.fn.exists('+winborder') == 1 and vim.o.winborder ~= '') and vim.o.winborder or 'single'
   config.border = config.border or default_border
@@ -2109,6 +2100,12 @@ H.buffer_create = function(path, mappings)
   -- Register buffer
   H.opened_buffers[buf_id] = { path = path }
 
+  -- Set buffer options
+  vim.bo[buf_id].filetype = 'minifiles'
+
+  -- Do not set up tracking behavior for imaginary paths
+  if H.fs_is_imaginary_path(path) then return buf_id end
+
   -- Make buffer mappings
   H.buffer_make_mappings(buf_id, mappings)
 
@@ -2118,14 +2115,11 @@ H.buffer_create = function(path, mappings)
     vim.api.nvim_create_autocmd(events, { group = augroup, buffer = buf_id, desc = desc, callback = callback })
   end
 
-  au({ 'CursorMoved', 'CursorMovedI' }, 'Tweak cursor position', H.view_track_cursor)
+  au({ 'CursorMoved', 'CursorMovedI', 'TextChangedP' }, 'Tweak cursor position', H.view_track_cursor)
   au({ 'TextChanged', 'TextChangedI', 'TextChangedP' }, 'Track buffer modification', H.view_track_text_change)
 
   -- Tweak buffer to be used nicely with other 'mini.nvim' modules
   vim.b[buf_id].minicursorword_disable = true
-
-  -- Set buffer options
-  vim.bo[buf_id].filetype = 'minifiles'
 
   -- Trigger dedicated event
   H.trigger_event('MiniFilesBufferCreate', { buf_id = buf_id })
@@ -2223,14 +2217,17 @@ H.buffer_make_mappings = function(buf_id, mappings)
 end
 
 H.buffer_update = function(buf_id, path, opts, is_preview)
-  if not (H.is_valid_buf(buf_id) and H.fs_is_present_path(path)) then return end
+  if not H.is_valid_buf(buf_id) then return end
 
   -- Perform entry type specific updates
-  local update_fun = H.fs_get_type(path) == 'directory' and H.buffer_update_directory or H.buffer_update_file
-  update_fun(buf_id, path, opts, is_preview)
+  local fs_type = H.fs_get_type(path)
+  if fs_type == 'directory' then H.buffer_update_directory(buf_id, path, opts, is_preview) end
+  if fs_type == 'file' then H.buffer_update_file(buf_id, path, opts, is_preview) end
+  if fs_type == nil then H.set_buflines(buf_id, { '-No-fs-entry-' .. string.rep('-', opts.windows.width_preview) }) end
 
   -- Trigger dedicated event
-  H.trigger_event('MiniFilesBufferUpdate', { buf_id = buf_id, win_id = H.opened_buffers[buf_id].win_id })
+  local data = { buf_id = buf_id, win_id = H.opened_buffers[buf_id].win_id }
+  if fs_type ~= nil then H.trigger_event('MiniFilesBufferUpdate', data) end
 
   -- Reset buffer as not modified
   H.opened_buffers[buf_id].n_modified = -1
@@ -2252,14 +2249,14 @@ H.buffer_update_directory = function(buf_id, path, opts, is_preview)
   local lines, icon_hl, name_hl = {}, {}, {}
   local prefix_fun, n_computed_prefixes = opts.content.prefix, is_preview and vim.o.lines or math.huge
   for i, entry in ipairs(fs_entries) do
-    local prefix, hl
+    local prefix, hl, name
     -- Compute prefix only in visible preview (for performance).
     -- NOTE: limiting entries in `fs_read_dir()` is not possible because all
     -- entries are needed for a proper filter and sort.
     if i <= n_computed_prefixes then
       prefix, hl = prefix_fun(entry)
     end
-    prefix, hl, name = prefix or '', hl or '', H.escape_newline(entry.name)
+    prefix, hl, name = prefix or '', hl or '', H.sanitize_string(entry.name)
     table.insert(lines, string.format(line_format, H.path_index[entry.path], prefix, name))
     table.insert(icon_hl, hl)
     table.insert(name_hl, entry.fs_type == 'directory' and 'MiniFilesDirectory' or 'MiniFilesFile')
@@ -2341,7 +2338,7 @@ H.buffer_compute_fs_diff = function(buf_id)
     local path_to = H.fs_child_path(path, name_to) .. (vim.endswith(name_to, '/') and '/' or '')
 
     -- Ignore blank lines and already synced entries (even several user-copied)
-    if l:find('^%s*$') == nil and H.escape_newline(path_from) ~= H.escape_newline(path_to) then
+    if l:find('^%s*$') == nil and H.sanitize_string(path_from) ~= H.sanitize_string(path_to) then
       table.insert(res, { from = path_from, to = path_to, dir = path })
     elseif path_id ~= nil then
       present_path_ids[path_id] = true
@@ -2407,9 +2404,6 @@ H.window_open = function(buf_id, config)
   -- Add temporary data which will be updated later
   config.row = 1
 
-  -- Ensure it works on Neovim<0.9
-  if vim.fn.has('nvim-0.9') == 0 then config.title = nil end
-
   -- Open without entering
   local win_id = vim.api.nvim_open_win(buf_id, false, config)
 
@@ -2448,7 +2442,6 @@ H.window_update = function(win_id, config)
 
   -- Ensure proper title
   if type(config.title) == 'string' then config.title = H.fit_to_width(config.title, config.width) end
-  if vim.fn.has('nvim-0.9') == 0 then config.title = nil end
 
   -- Preserve some config values
   local win_config = vim.api.nvim_win_get_config(win_id)
@@ -2612,7 +2605,9 @@ if H.is_windows then
   H.fs_normalize_path = function(path) return (path:gsub('\\', '/'):gsub('/+', '/'):gsub('(.)[\\/]$', '%1')) end
 end
 
-H.fs_is_present_path = function(path) return vim.loop.fs_stat(path) ~= nil end
+H.fs_is_imaginary_path = function(path) return path:sub(-1) == '\000' end
+
+H.fs_is_present_path = function(path) return vim.loop.fs_stat(path) ~= nil and not H.fs_is_imaginary_path(path) end
 
 H.fs_child_path = function(dir, name) return H.fs_normalize_path(string.format('%s/%s', dir, name)) end
 
@@ -2644,7 +2639,7 @@ end
 H.fs_is_windows_top = function(path) return H.is_windows and path:find('^%w:[\\/]?$') ~= nil end
 
 H.fs_get_type = function(path)
-  if not H.fs_is_present_path(path) then return nil end
+  if not (not H.fs_is_imaginary_path(path) and H.fs_is_present_path(path)) then return nil end
   return vim.fn.isdirectory(path) == 1 and 'directory' or 'file'
 end
 
@@ -2673,7 +2668,7 @@ H.fs_actions_to_lines = function(fs_actions)
 
     -- Add to per directory lines
     local dir_actions = actions_per_dir[dir] or {}
-    table.insert(dir_actions, '  ' .. H.escape_newline(l))
+    table.insert(dir_actions, '  ' .. H.sanitize_string(l))
     actions_per_dir[dir] = dir_actions
   end
 
@@ -2751,10 +2746,13 @@ H.fs_do.delete = function(from, to)
   -- Act based on whether delete is permanent or not
   if to == nil then return vim.fn.delete(from, 'rf') == 0 end
   pcall(vim.fn.delete, to, 'rf')
-  return H.fs_do.move(from, to)
+  -- Move to trash but skip renaming loaded buffer (same as with permanent
+  -- delete). This also skips triggering extra autocommands that can have
+  -- unwanted side effects (like loading LSP in the new "trash" project).
+  return H.fs_do.move(from, to, true)
 end
 
-H.fs_do.move = function(from, to)
+H.fs_do.move = function(from, to, skip_buf_rename)
   -- Don't override existing path
   if H.fs_is_present_path(to) then return H.warn_existing_path(from, 'move or rename') end
 
@@ -2776,8 +2774,10 @@ H.fs_do.move = function(from, to)
   H.replace_path_in_index(from, to)
 
   -- Rename in loaded buffers
-  for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
-    H.rename_loaded_buffer(buf_id, from, to)
+  if not skip_buf_rename then
+    for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
+      H.rename_loaded_buffer(buf_id, from, to)
+    end
   end
 
   return success
@@ -2923,7 +2923,7 @@ H.getcharstr = function()
   return char
 end
 
-H.escape_newline = function(x) return ((x or ''):gsub('\n', '<NL>')) end
+H.sanitize_string = function(x) return ((x or ''):gsub('\n', '<NL>'):gsub('%z', '')) end
 
 -- TODO: Remove after compatibility with Neovim=0.9 is dropped
 H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
